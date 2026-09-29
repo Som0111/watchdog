@@ -18,6 +18,7 @@ Use-cases
 
 import logging
 import queue
+import sys
 import threading
 import time
 from pathlib import Path
@@ -34,9 +35,6 @@ logger = logging.getLogger(__name__)
 
 # How long (seconds) to wait after the last event before processing the batch.
 DEBOUNCE_INTERVAL = 1.0
-
-# Directory to watch — change this to any path you like.
-WATCH_PATH = "."
 
 
 class BatchingEventHandler(FileSystemEventHandler):
@@ -116,35 +114,32 @@ def process_batch(events: list[FileSystemEvent]) -> None:
     # TODO: add your build / test / notification logic here.
 
 
-def main() -> None:
-    event_queue: queue.Queue = queue.Queue()
-    stop_event = threading.Event()
+path = sys.argv[1] if len(sys.argv) > 1 else "."
 
-    handler = BatchingEventHandler(event_queue)
-    observer = Observer()
-    observer.schedule(handler, path=WATCH_PATH, recursive=True)
+event_queue: queue.Queue = queue.Queue()
+stop_event = threading.Event()
 
-    worker_thread = threading.Thread(
-        target=batch_worker,
-        args=(event_queue, stop_event),
-        name="BatchWorker",
-        daemon=True,
-    )
+handler = BatchingEventHandler(event_queue)
+observer = Observer()
+observer.schedule(handler, path=path, recursive=True)
 
-    logger.info("Watching '%s' (Ctrl-C to stop) …", Path(WATCH_PATH).resolve())
-    observer.start()
-    worker_thread.start()
+worker_thread = threading.Thread(
+    target=batch_worker,
+    args=(event_queue, stop_event),
+    name="BatchWorker",
+    daemon=True,
+)
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Stopping …")
-    finally:
-        stop_event.set()
-        observer.stop()
-        observer.join()
+logger.info("Watching '%s' (Ctrl-C to stop) …", Path(path).resolve())
+observer.start()
+worker_thread.start()
 
-
-if __name__ == "__main__":
-    main()
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    logger.info("Stopping …")
+finally:
+    stop_event.set()
+    observer.stop()
+    observer.join()
